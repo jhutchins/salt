@@ -248,6 +248,10 @@ class Compiler(object):
             errors.append('High data is not a dictionary and is invalid')
         reqs = {}
         for name, body in high.items():
+            self._verify_high_item(self, name, body, errors, reqs)
+        return errors
+
+    def _verify_high_item(self, name, body, errors, reqs):
             if name.startswith('__'):
                 continue
             if not isinstance(name, string_types):
@@ -354,7 +358,6 @@ class Compiler(object):
                         errors.append(('Too many functions declared in state'
                             ' "{0}" in sls {1}').format(
                                 state, body['__sls__']))
-        return errors
 
     def order_chunks(self, chunks):
         '''
