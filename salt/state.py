@@ -252,112 +252,112 @@ class Compiler(object):
         return errors
 
     def _verify_high_item(self, name, body, errors, reqs):
-            if name.startswith('__'):
+        if name.startswith('__'):
+            continue
+        if not isinstance(name, string_types):
+            err = ('The name {0} in sls {1} is not formed as a '
+                   'string but is a {2}').format(
+                           name, body['__sls__'], type(name))
+            errors.append(err)
+        if not isinstance(body, dict):
+            err = ('The type {0} in {1} is not formated as a dictionary'
+                   .format(name, body))
+            errors.append(err)
+            continue
+        for state in body:
+            if state.startswith('__'):
                 continue
-            if not isinstance(name, string_types):
-                err = ('The name {0} in sls {1} is not formed as a '
-                       'string but is a {2}').format(
-                               name, body['__sls__'], type(name))
+            if not isinstance(body[state], list):
+                err = ('The state "{0}" in sls {1} is not formed as a list'
+                       .format(name, body['__sls__']))
                 errors.append(err)
-            if not isinstance(body, dict):
-                err = ('The type {0} in {1} is not formated as a dictionary'
-                       .format(name, body))
-                errors.append(err)
-                continue
-            for state in body:
-                if state.startswith('__'):
-                    continue
-                if not isinstance(body[state], list):
-                    err = ('The state "{0}" in sls {1} is not formed as a list'
-                           .format(name, body['__sls__']))
-                    errors.append(err)
-                else:
-                    fun = 0
-                    if '.' in state:
+            else:
+                fun = 0
+                if '.' in state:
+                    fun += 1
+                for arg in body[state]:
+                    if isinstance(arg, string_types):
                         fun += 1
-                    for arg in body[state]:
-                        if isinstance(arg, string_types):
-                            fun += 1
-                            if ' ' in arg.strip():
-                                errors.append(('The function "{0}" in state '
-                                '"{1}" in SLS "{2}" has '
-                                'whitespace, a function with whitespace is '
-                                'not supported, perhaps this is an argument '
-                                'that is missing a ":"').format(
-                                    arg,
+                        if ' ' in arg.strip():
+                            errors.append(('The function "{0}" in state '
+                            '"{1}" in SLS "{2}" has '
+                            'whitespace, a function with whitespace is '
+                            'not supported, perhaps this is an argument '
+                            'that is missing a ":"').format(
+                                arg,
+                                name,
+                                body['__sls__']))
+                    elif isinstance(arg, dict):
+                        # The arg is a dict, if the arg is require or
+                        # watch, it must be a list.
+                        #
+                        # Add the requires to the reqs dict and check them
+                        # all for recursive requisites.
+                        argfirst = next(iter(arg))
+                        if argfirst == 'require' or argfirst == 'watch':
+                            if not isinstance(arg[argfirst], list):
+                                errors.append(('The require or watch'
+                                ' statement in state "{0}" in sls "{1}" '
+                                'needs to be formed as a list').format(
+                                    name,
+                                    body['__sls__']
+                                    ))
+                            # It is a list, verify that the members of the
+                            # list are all single key dicts.
+                            else:
+                                reqs[name] = {'state': state}
+                                for req in arg[argfirst]:
+                                    if not isinstance(req, dict):
+                                        err = ('Requisite declaration {0}'
+                                        ' in SLS {1} is not formed as a'
+                                        ' single key dictionary').format(
+                                            req,
+                                            body['__sls__'])
+                                        errors.append(err)
+                                        continue
+                                    req_key = next(iter(req))
+                                    req_val = req[req_key]
+                                    if not ishashable(req_val):
+                                        errors.append((
+                                            'Illegal requisite "{0}", '
+                                            'please check your syntax.\n'
+                                            ).format(str(req_val)))
+
+                                    # Check for global recursive requisites
+                                    reqs[name][req_val] = req_key
+                                    # I am going beyond 80 chars on
+                                    # purpose, this is just too much
+                                    # of a pain to deal with otherwise
+                                    if req_val in reqs:
+                                        if name in reqs[req_val]:
+                                            if reqs[req_val][name] == state:
+                                                if reqs[req_val]['state'] == reqs[name][req_val]:
+                                                    err = ('A recursive '
+                                                    'requisite was found, SLS '
+                                                    '"{0}" ID "{1}" ID "{2}"'
+                                                    ).format(
+                                                            body['__sls__'],
+                                                            name,
+                                                            req_val
+                                                            )
+                                                    errors.append(err)
+                            # Make sure that there is only one key in the
+                            # dict
+                            if len(list(arg)) != 1:
+                                errors.append(('Multiple dictionaries '
+                                'defined in argument of state "{0}" in sls'
+                                ' {1}').format(
                                     name,
                                     body['__sls__']))
-                        elif isinstance(arg, dict):
-                            # The arg is a dict, if the arg is require or
-                            # watch, it must be a list.
-                            #
-                            # Add the requires to the reqs dict and check them
-                            # all for recursive requisites.
-                            argfirst = next(iter(arg))
-                            if argfirst == 'require' or argfirst == 'watch':
-                                if not isinstance(arg[argfirst], list):
-                                    errors.append(('The require or watch'
-                                    ' statement in state "{0}" in sls "{1}" '
-                                    'needs to be formed as a list').format(
-                                        name,
-                                        body['__sls__']
-                                        ))
-                                # It is a list, verify that the members of the
-                                # list are all single key dicts.
-                                else:
-                                    reqs[name] = {'state': state}
-                                    for req in arg[argfirst]:
-                                        if not isinstance(req, dict):
-                                            err = ('Requisite declaration {0}'
-                                            ' in SLS {1} is not formed as a'
-                                            ' single key dictionary').format(
-                                                req,
-                                                body['__sls__'])
-                                            errors.append(err)
-                                            continue
-                                        req_key = next(iter(req))
-                                        req_val = req[req_key]
-                                        if not ishashable(req_val):
-                                            errors.append((
-                                                'Illegal requisite "{0}", '
-                                                'please check your syntax.\n'
-                                                ).format(str(req_val)))
-
-                                        # Check for global recursive requisites
-                                        reqs[name][req_val] = req_key
-                                        # I am going beyond 80 chars on
-                                        # purpose, this is just too much
-                                        # of a pain to deal with otherwise
-                                        if req_val in reqs:
-                                            if name in reqs[req_val]:
-                                                if reqs[req_val][name] == state:
-                                                    if reqs[req_val]['state'] == reqs[name][req_val]:
-                                                        err = ('A recursive '
-                                                        'requisite was found, SLS '
-                                                        '"{0}" ID "{1}" ID "{2}"'
-                                                        ).format(
-                                                                body['__sls__'],
-                                                                name,
-                                                                req_val
-                                                                )
-                                                        errors.append(err)
-                                # Make sure that there is only one key in the
-                                # dict
-                                if len(list(arg)) != 1:
-                                    errors.append(('Multiple dictionaries '
-                                    'defined in argument of state "{0}" in sls'
-                                    ' {1}').format(
-                                        name,
-                                        body['__sls__']))
-                    if not fun:
-                        if state == 'require' or state == 'watch':
-                            continue
-                        errors.append(('No function declared in state "{0}" in'
-                            ' sls {1}').format(state, body['__sls__']))
-                    elif fun > 1:
-                        errors.append(('Too many functions declared in state'
-                            ' "{0}" in sls {1}').format(
-                                state, body['__sls__']))
+                if not fun:
+                    if state == 'require' or state == 'watch':
+                        continue
+                    errors.append(('No function declared in state "{0}" in'
+                        ' sls {1}').format(state, body['__sls__']))
+                elif fun > 1:
+                    errors.append(('Too many functions declared in state'
+                        ' "{0}" in sls {1}').format(
+                            state, body['__sls__']))
 
     def order_chunks(self, chunks):
         '''
